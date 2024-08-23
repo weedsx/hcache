@@ -5,13 +5,13 @@ import (
 	"sync"
 )
 
-type Cache struct {
-	mu         *sync.Mutex
+type cache struct {
+	mu         sync.Mutex
 	lru        *lru.Cache
 	cacheBytes int64
 }
 
-func (c *Cache) add(key string, value ByteView) {
+func (c *cache) add(key string, value ByteView) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.lru == nil {
@@ -20,7 +20,7 @@ func (c *Cache) add(key string, value ByteView) {
 	c.lru.Add(key, value)
 }
 
-func (c *Cache) get(key string) (value ByteView, ok bool) {
+func (c *cache) get(key string) (value ByteView, ok bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.lru == nil {
