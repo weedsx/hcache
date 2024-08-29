@@ -30,7 +30,9 @@ func New(replicas int, hashFn Hash) *Map {
 func (m *Map) Add(Keys ...string) {
 	for _, key := range Keys {
 		for i := range m.replicas {
-			hash := int(m.hash([]byte(key + strconv.Itoa(i))))
+			indexStr := strconv.Itoa(i)
+			combinedKey := indexStr + key
+			hash := int(m.hash([]byte(combinedKey)))
 			m.ring = append(m.ring, hash)
 			m.hashMap[hash] = key
 		}
