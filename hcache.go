@@ -25,6 +25,7 @@ type Group struct {
 	name      string
 	getter    Getter
 	mainCache cache
+	peers     PeerPicker
 }
 
 var mu sync.RWMutex
@@ -65,9 +66,34 @@ func (g *Group) Get(key string) (ByteView, error) {
 	return g.load(key)
 }
 
+// RegisterPeers 注册一个 PeerPicker 以选择远程 peer
+func (g *Group) RegisterPeers(peer PeerPicker) {
+	if g.peers != nil {
+		panic("RegisterPeerPicker called more than once")
+	}
+	g.peers = peer
+}
+
 func (g *Group) load(key string) (ByteView, error) {
-	// todo 分布式场景下会调用 getFromPeer 从其他节点获取
+	// 从分布式节点中读取缓存
+	if g.peers != nil {
+		if peer, ok := g.peers.PickPeer(key); ok {
+			if values, err := g.getFromPeer(peer, key); err != nil {
+				return values, nil
+			}
+		}
+		log.Println("[HCache] Failed to get from peer")
+	}
+	// 本地读取缓存
 	return g.getLocally(key)
+}
+
+func (g *Group) getFromPeer(peer PeerGetter, key string) (ByteView, error) {
+	bytes, err := peer.Get(g.name, key)
+	if err != nil {
+		return ByteView{}, err
+	}
+	return ByteView{b: bytes}, nil
 }
 
 // getLocally 调用用户回调函数 g.getter.Get() 获取源数据，并且将源数据添加到缓存 mainCache 中
