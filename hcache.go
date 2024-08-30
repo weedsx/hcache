@@ -2,6 +2,7 @@ package hcache
 
 import (
 	"fmt"
+	"hcache/singleflight"
 	"log"
 	"sync"
 )
@@ -26,6 +27,7 @@ type Group struct {
 	getter    Getter
 	mainCache cache
 	peers     PeerPicker
+	loader    *singleflight.Group // 使用 singleflight.Group 来确保每个键只被获取一次 (防止缓存击穿)
 }
 
 var mu sync.RWMutex
@@ -42,6 +44,7 @@ func NewGroup(name string, cacheBytes int64, getter Getter) *Group {
 		name:      name,
 		getter:    getter,
 		mainCache: cache{cacheBytes: cacheBytes},
+		loader:    &singleflight.Group{},
 	}
 	groups[name] = g
 	return g
@@ -75,17 +78,24 @@ func (g *Group) RegisterPeers(peer PeerPicker) {
 }
 
 func (g *Group) load(key string) (ByteView, error) {
-	// 从分布式节点中读取缓存
-	if g.peers != nil {
-		if peer, ok := g.peers.PickPeer(key); ok {
-			if values, err := g.getFromPeer(peer, key); err != nil {
-				return values, nil
+	// 确保每个键只被获取一次 (防止缓存击穿)
+	val, err := g.loader.Do(key, func() (any, error) {
+		// 从分布式节点中读取缓存
+		if g.peers != nil {
+			if peer, ok := g.peers.PickPeer(key); ok {
+				if values, err := g.getFromPeer(peer, key); err != nil {
+					return values, nil
+				}
 			}
+			log.Println("[HCache] Failed to get from peer")
 		}
-		log.Println("[HCache] Failed to get from peer")
+		// 本地读取缓存
+		return g.getLocally(key)
+	})
+	if err != nil {
+		return ByteView{}, err
 	}
-	// 本地读取缓存
-	return g.getLocally(key)
+	return val.(ByteView), nil
 }
 
 func (g *Group) getFromPeer(peer PeerGetter, key string) (ByteView, error) {
