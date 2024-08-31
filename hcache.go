@@ -2,6 +2,7 @@ package hcache
 
 import (
 	"fmt"
+	pb "hcache/hcachepb/hcachepb"
 	"hcache/singleflight"
 	"log"
 	"sync"
@@ -99,11 +100,17 @@ func (g *Group) load(key string) (ByteView, error) {
 }
 
 func (g *Group) getFromPeer(peer PeerGetter, key string) (ByteView, error) {
-	bytes, err := peer.Get(g.name, key)
-	if err != nil {
+	req := &pb.Request{
+		Group: g.name,
+		Key:   key,
+	}
+	res := &pb.Response{}
+
+	if err := peer.Get(req, res); err != nil {
 		return ByteView{}, err
 	}
-	return ByteView{b: bytes}, nil
+
+	return ByteView{b: res.GetValue()}, nil
 }
 
 // getLocally 调用用户回调函数 g.getter.Get() 获取源数据，并且将源数据添加到缓存 mainCache 中
